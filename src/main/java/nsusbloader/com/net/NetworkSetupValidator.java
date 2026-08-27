@@ -27,8 +27,6 @@ import java.io.IOException;
 import java.net.*;
 import java.util.*;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 public class NetworkSetupValidator {
 
     private String hostIp;
@@ -51,7 +49,7 @@ public class NetworkSetupValidator {
 
         try {
             filesList.removeIf(this::fileValidate);
-            encodeAndAddFilesToMap(filesList);
+            addFilesToMap(filesList);
             resolveIp(hostIp);
             resolvePort(hostPortNum);
         }
@@ -103,16 +101,12 @@ public class NetworkSetupValidator {
         }
     }
 
-    private void encodeAndAddFilesToMap(List<File> filesList) throws FileNotFoundException {
-        filesList.forEach(file -> files.put(encodeUri(file), new UniFile(file)));
+    private void addFilesToMap(List<File> filesList) throws FileNotFoundException {
+        filesList.forEach(file -> files.put(file.getName(), new UniFile(file)));
 
         if (files.isEmpty()) {
             throw new FileNotFoundException("NET: No files to send.");
         }
-    }
-
-    private String encodeUri(File file) {
-        return URLEncoder.encode(file.getName(), UTF_8).replaceAll("\\+", "%20"); // replace '+' to '%20'
     }
 
     private void resolveIp(String hostIpAddr) throws IOException, InterruptedException {

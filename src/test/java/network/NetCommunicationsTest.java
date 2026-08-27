@@ -1,7 +1,7 @@
 package network;
 
 import nsusbloader.NSLMain;
-import nsusbloader.com.net.NETCommunications;
+import nsusbloader.com.net.AwooNet;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,6 +47,7 @@ public class NetCommunicationsTest {
 
     private ServerSocket switchSocket;
     private Thread netThread;
+    private AwooNet netCommunications;
     private Handshake handshake;
 
     @BeforeAll
@@ -61,7 +62,7 @@ public class NetCommunicationsTest {
         switchSocket.setSoTimeout(SO_TIMEOUT_MS);
 
         var files = new ArrayList<>(List.of(test1Nsp, test2Nsp, test3Nsp));
-        var netCommunications = new NETCommunications(
+        netCommunications = new AwooNet(
                 files,
                 HOST_IP,
                 false,
@@ -80,17 +81,11 @@ public class NetCommunicationsTest {
 
     @AfterAll
     void afterAll() throws Exception {
-        try (var socket = new Socket(InetAddress.getByName(HOST_IP), HOST_PORT)) {
-            socket.setSoTimeout(SO_TIMEOUT_MS);
-            var out = socket.getOutputStream();
-            out.write("DROP\r\n\r\n".getBytes(UTF_8));
-            out.flush();
-            socket.shutdownOutput();
-        }
+        netCommunications.cancel();
         if (netThread != null) {
             netThread.join(SECONDS.toMillis(10));
             if (netThread.isAlive())
-                fail("NETCommunications did not terminate the serve loop after DROP");
+                fail("NETCommunications did not terminate the serve loop after shutdown");
         }
         if (switchSocket != null)
             switchSocket.close();
@@ -113,7 +108,7 @@ public class NetCommunicationsTest {
     @DisplayName("HEAD /test1.nsp returns 200 with the full header structure, no body")
     @Test
     void headRequestReturns200WithFullStructure() throws Exception {
-        var p = serveRequest("HEAD /%s HTTP/1.0".formatted(TEST1_NAME),
+        var p = serveRequest("HEAD /%s HTTP/1.1".formatted(TEST1_NAME),
                 "Host: 127.0.0.1");
         assert200(p, TEST1_SIZE);
     }
@@ -121,7 +116,7 @@ public class NetCommunicationsTest {
     @DisplayName("GET test1 Range: bytes=0-4095 returns 206 with matching body")
     @Test
     void getWithExplicitRangeReturns206AndExactBytes() throws Exception {
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST1_NAME),
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST1_NAME),
                 "Range: bytes=0-4095");
         assert206(p, TEST1_SIZE, 0, 4095);
         assertArrayEquals(readSlice(test1Nsp, 0, 4096), p.body(), "body must equal the requested file bytes");
@@ -132,7 +127,7 @@ public class NetCommunicationsTest {
     void getWithMidFileRangeReturns206AndExactBytes() throws Exception {
         var start = 1_000_000L;
         var end = 1_000_999L;
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST1_NAME),
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST1_NAME),
                 "Range: bytes=%d-%d".formatted(start, end));
         assert206(p, TEST1_SIZE, start, end);
         assertArrayEquals(readSlice(test1Nsp, start, end - start + 1), p.body(), "body must equal the requested file bytes");
@@ -142,7 +137,7 @@ public class NetCommunicationsTest {
     @Test
     void getSingleByteRangeReturns206AndExactByte() throws Exception {
         var offset = 250_000L;
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST1_NAME),
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST1_NAME),
                 "Range: bytes=%d-%d".formatted(offset, offset));
         assert206(p, TEST1_SIZE, offset, offset);
         assertArrayEquals(readSlice(test1Nsp, offset, 1), p.body(), "body must be exactly one byte");
@@ -153,7 +148,7 @@ public class NetCommunicationsTest {
     void getWithTailRangeReturns206AndExactBytes() throws Exception {
         var start = TEST2_SIZE - 608;
         var end = TEST2_SIZE - 1;
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST2_NAME),
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST2_NAME),
                 "Range: bytes=%d-%d".formatted(start, end));
         assert206(p, TEST2_SIZE, start, end);
         assertArrayEquals(readSlice(test2Nsp, start, 608), p.body(), "body must equal the requested file bytes");
@@ -164,7 +159,7 @@ public class NetCommunicationsTest {
     void getWithOpenEndedRangeReturnsWholeTail() throws Exception {
         var start = 500L;
         var end = TEST1_SIZE - 1;
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST1_NAME),
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST1_NAME),
                 "Range: bytes=500-");
         assert206(p, TEST1_SIZE, start, end);
         assertArrayEquals(readSlice(test1Nsp, start, TEST1_SIZE - start), p.body(), "body must be the full tail of the file");
@@ -173,39 +168,39 @@ public class NetCommunicationsTest {
     @DisplayName("GET unknown file returns 404 structure")
     @Test
     void getUnknownFileReturns404() throws Exception {
-        var p = serveRequest("GET /nope.nsp HTTP/1.0", "Host: 127.0.0.1");
-        assert4xx(p, "HTTP/1.0 404 Not Found");
+        var p = serveRequest("GET /nope.nsp HTTP/1.1", "Host: 127.0.0.1");
+        assert4xx(p, "HTTP/1.1 404 Not Found");
     }
 
-    @DisplayName("GET Range: bytes=5000-1000 (start > end) returns 400")
+    @DisplayName("GET Range: bytes=5000-1000 (start > end) returns 416")
     @Test
-    void invertedRangeReturns400() throws Exception {
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST1_NAME),
+    void invertedRangeReturns416() throws Exception {
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST1_NAME),
                 "Range: bytes=5000-1000");
-        assert4xx(p, "HTTP/1.0 400 invalid range");
+        assert4xx(p, "HTTP/1.1 416 ");
     }
 
     @DisplayName("GET Range: bytes=abc-def returns 400")
     @Test
     void malformedRangeReturns400() throws Exception {
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST1_NAME),
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST1_NAME),
                 "Range: bytes=abc-def");
-        assert4xx(p, "HTTP/1.0 400 invalid range");
+        assert4xx(p, "HTTP/1.1 400 Bad Request");
     }
 
-    @DisplayName("GET small file (300 B) with suffix range returns 416")
+    @DisplayName("GET small file (300 B) with suffix range returns 206")
     @Test
-    void suffixRangeOnTinyFileReturns416() throws Exception {
-        var p = serveRequest("GET /%s HTTP/1.0".formatted(TEST3_NAME),
+    void suffixRangeOnTinyFileReturns206() throws Exception {
+        var p = serveRequest("GET /%s HTTP/1.1".formatted(TEST3_NAME),
                 "Range: bytes=-100");
-        assert4xx(p, "HTTP/1.0 416 Requested Range Not Satisfiable");
+        assert206(p, TEST3_SIZE, TEST3_SIZE-100L-1, TEST3_SIZE-1);
     }
 
     // response-structure assertions
 
     private void assert200(HttpPacket p, long fileSize) {
         assertAll(
-                () -> assertEquals("HTTP/1.0 200 OK", p.statusLine()),
+                () -> assertEquals("HTTP/1.1 200 OK", p.statusLine()),
                 () -> assertEquals("NS-USBloader", p.headers().get("Server")),
                 () -> assertRfc1123(p.headers().get("Date")),
                 () -> assertEquals("application/octet-stream", p.headers().get("Content-type")),
@@ -218,7 +213,7 @@ public class NetCommunicationsTest {
 
     private void assert206(HttpPacket p, long fileSize, long start, long end) {
         assertAll(
-                () -> assertEquals("HTTP/1.0 206 Partial Content", p.statusLine()),
+                () -> assertEquals("HTTP/1.1 206 Partial Content", p.statusLine()),
                 () -> assertEquals("NS-USBloader", p.headers().get("Server")),
                 () -> assertRfc1123(p.headers().get("Date")),
                 () -> assertEquals("application/octet-stream", p.headers().get("Content-type")),

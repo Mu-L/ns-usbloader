@@ -1,5 +1,5 @@
 /*
-    Copyright 2019-2020 Dmitry Isaenko
+    Copyright 2019-2026 Dmitry Isaenko
 
     This file is part of NS-USBloader.
 
@@ -18,7 +18,7 @@
 */
 package nsusbloader.cli;
 
-import nsusbloader.com.net.NETCommunications;
+import nsusbloader.com.net.AwooNet;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -130,7 +130,7 @@ public class TinfoilNetCli {
     }
 
     private void runTinfoilNetBackend() throws InterruptedException{
-        NETCommunications netCommunications = new NETCommunications(
+        var netCommunications = new AwooNet(
                 filesList,
                 nsIp,
                 false,

@@ -32,7 +32,7 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import nsusbloader.AppPreferences;
 import nsusbloader.NSLDataTypes.EFileStatus;
-import nsusbloader.com.net.NETCommunications;
+import nsusbloader.com.net.AwooNet;
 import nsusbloader.com.usb.UsbCommunications;
 import nsusbloader.FilesHelper;
 import nsusbloader.MediatorControl;
@@ -413,9 +413,9 @@ public class GamesController implements Initializable, ISubscriber {
                 String nsIP = getNsIp();
 
                 if (! tinfoilSettings.isExpertModeSelected())
-                    usbNetCommunications = new NETCommunications(nspToUpload, nsIP, false, "", "", "");
+                    usbNetCommunications = new AwooNet(nspToUpload, nsIP, false, "", "", "");
                 else {
-                    usbNetCommunications = new NETCommunications(
+                    usbNetCommunications = new AwooNet(
                             nspToUpload,
                             nsIP,
                             tinfoilSettings.isNoRequestsServe(),
@@ -438,14 +438,6 @@ public class GamesController implements Initializable, ISubscriber {
             return;
 
         usbNetCommunications.cancel();
-
-        if (usbNetCommunications instanceof NETCommunications){
-            try{
-                ((NETCommunications) usbNetCommunications).getServerSocket().close();
-                ((NETCommunications) usbNetCommunications).getClientSocket().close();
-            }
-            catch (Exception ignore){ }
-        }
     }
     /**
      * Drag-n-drop support (dragOver consumer)
